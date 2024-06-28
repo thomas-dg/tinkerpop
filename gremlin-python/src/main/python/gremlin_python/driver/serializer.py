@@ -357,7 +357,7 @@ class GraphBinarySerializersV4(object):
 
         return bytes(ba)
 
-    def deserialize_message(self, message):
+    def deserialize_message(self, message, is_first_chunk=False):
         if len(message) == 0:
             return {'status': {'code': 204},
                     'result': {'meta': {},
@@ -366,9 +366,15 @@ class GraphBinarySerializersV4(object):
         # for parsing string message via HTTP connections
         b = io.BytesIO(base64.b64decode(message) if isinstance(message, str) else message)
 
-        b.read(1)  # version
+        if is_first_chunk:
+            b.read(1)  # version
 
-        result = self.read_payload(b)
+        result, readable = self.read_payload(b)
+        if not readable:
+            return {
+                'result': {'meta': {},
+                           'data': result}
+            }
         status_code = self.int32_unpack(b.read(4))[0]  # status code
         status_msg = self._graphbinary_reader.to_object(b, graphbinaryV4.DataType.string, nullable=True)
         status_ex = self._graphbinary_reader.to_object(b, graphbinaryV4.DataType.string, nullable=True)
@@ -386,10 +392,15 @@ class GraphBinarySerializersV4(object):
 
     def read_payload(self, buffer):
         results = []
-        while buffer.readable():
+        readable = True;
+        while buffer.readable():  # find method or way to access readable bytes without using buffer.getvalue()
+            # print(buffer.tell())
+            if buffer.tell() == len(buffer.getvalue()):
+                readable = False
+                break
             data = self._graphbinary_reader.to_object(buffer)
             if data == Marker.end_of_stream():
                 break
             results.append(data)
 
-        return results
+        return results, readable

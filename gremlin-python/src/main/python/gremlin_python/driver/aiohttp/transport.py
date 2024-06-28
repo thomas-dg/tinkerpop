@@ -144,7 +144,8 @@ class AiohttpTransport(AbstractBaseTransport):
 class AiohttpHTTPTransport(AbstractBaseTransport):
     nest_asyncio_applied = False
 
-    def __init__(self, call_from_event_loop=None, read_timeout=None, write_timeout=None, **kwargs):
+    def __init__(self, message_serializer=None,
+                 call_from_event_loop=None, read_timeout=None, write_timeout=None, **kwargs):
         if call_from_event_loop is not None and call_from_event_loop and not AiohttpTransport.nest_asyncio_applied:
             """ 
                 The AiohttpTransport implementation uses the asyncio event loop. Because of this, it cannot be called 
@@ -161,6 +162,7 @@ class AiohttpHTTPTransport(AbstractBaseTransport):
         self._client_session = None
         self._http_req_resp = None
         self._enable_ssl = False
+        self._message_serializer = message_serializer
 
         # Set all inner variables to parameters passed in.
         self._aiohttp_kwargs = kwargs
@@ -212,17 +214,38 @@ class AiohttpHTTPTransport(AbstractBaseTransport):
         # Inner function to perform async read.
         async def async_read():
             # TODO: set-up chunked reading
-            buffer = b""
-            # async for data, end_of_http_chunk in self._http_req_resp.content.iter_chunks():
-            #     buffer += data
-            #     if end_of_http_chunk:
-            #         print('ended')
-            #     print(buffer)
-            async with async_timeout.timeout(self._read_timeout):
-                data = await self._http_req_resp.read()
-                return {"content": data,
-                        "ok": self._http_req_resp.ok,
-                        "status": self._http_req_resp.status}
+            # buffer = b""
+            message = {'status': {'code': 0,
+                                  'message': '',
+                                  'exception': ''},
+                       'result': {'meta': {},
+                                  'data': []}}
+            is_first_chunk = True
+
+            async for data, _ in self._http_req_resp.content.iter_chunks():
+                chunk_msg = self._message_serializer.deserialize_message(data, is_first_chunk)
+                if 'result' in chunk_msg:
+                    msg_data = message['result']['data']
+                    chunk_data = chunk_msg['result']['data']
+                    message['result']['data'] = [*msg_data, *chunk_data]
+                if 'status' in chunk_msg:
+                    message.update({'status': chunk_msg['status']})
+                is_first_chunk = False
+
+            msg = {"content": message,  #use deserialzed content
+                   "ok": self._http_req_resp.ok,
+                   "status": self._http_req_resp.status}
+            return msg
+
+            # async with async_timeout.timeout(self._read_timeout):
+            #     data = await self._http_req_resp.read()
+            #     print(self._http_req_resp.headers)
+            #     print(self._http_req_resp.status)
+            #     print(self._http_req_resp.ok)
+            #     print(len(data))
+            #     return {"content": data,
+            #             "ok": self._http_req_resp.ok,
+            #             "status": self._http_req_resp.status}
 
         return self._loop.run_until_complete(async_read())
 

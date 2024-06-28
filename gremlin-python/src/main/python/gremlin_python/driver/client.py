@@ -76,7 +76,7 @@ class Client:
             else:
                 def transport_factory():
                     if self._use_http:
-                        return AiohttpHTTPTransport(**transport_kwargs)
+                        return AiohttpHTTPTransport(self._message_serializer, **transport_kwargs)
                     else:
                         return AiohttpTransport(**transport_kwargs)
         self._transport_factory = transport_factory

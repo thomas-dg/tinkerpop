@@ -57,7 +57,7 @@ class AbstractBaseProtocol(metaclass=abc.ABCMeta):
         self._transport = transport
 
     @abc.abstractmethod
-    def data_received(self, message, results_dict):
+    def data_received(self, message, result_set):
         pass
 
     @abc.abstractmethod
@@ -232,16 +232,16 @@ class GremlinServerHTTPProtocol(AbstractBaseProtocol):
                                       'message': 'Server disconnected - please try to reconnect', 'attributes': {}})
 
         if response['ok']:
-            message = self._message_serializer.deserialize_message(response['content'])
+            message = response['content']
             status_code = message['status']['code']
             aggregate_to = message['result']['meta'].get('aggregateTo', 'list')
             data = message['result']['data']
             result_set.aggregate_to = aggregate_to
 
-            if status_code == 204:
+            if status_code == 204 and len(data) == 0:
                 result_set.stream.put_nowait([])
                 return status_code
-            elif status_code in [200, 206]:
+            elif status_code in [200, 204, 206]:
                 result_set.stream.put_nowait(data)
                 return status_code
             else:
