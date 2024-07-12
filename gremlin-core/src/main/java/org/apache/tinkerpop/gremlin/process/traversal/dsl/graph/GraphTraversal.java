@@ -47,6 +47,8 @@ import org.apache.tinkerpop.gremlin.process.traversal.lambda.TrueTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.step.ByModulating;
 import org.apache.tinkerpop.gremlin.process.traversal.step.Configuring;
 import org.apache.tinkerpop.gremlin.process.traversal.step.FromToModulating;
+import org.apache.tinkerpop.gremlin.process.traversal.step.GType;
+import org.apache.tinkerpop.gremlin.process.traversal.step.GValue;
 import org.apache.tinkerpop.gremlin.process.traversal.step.Mutating;
 import org.apache.tinkerpop.gremlin.process.traversal.step.ReadWriting;
 import org.apache.tinkerpop.gremlin.process.traversal.step.TimesModulating;
@@ -230,7 +232,47 @@ import static org.apache.tinkerpop.gremlin.structure.VertexProperty.Cardinality.
  */
 public interface GraphTraversal<S, E> extends Traversal<S, E> {
 
+    /**
+     * Exposes administrative methods that are either internal to TinkerPop or for users with advanced needs. This
+     * separation helps keep the Gremlin API more concise. Any {@code GraphTraversal} can get an instance of its
+     * administrative form by way of {@link GraphTraversal#asAdmin()}.
+     * <p/>
+     * Note that step overloads allowing use of {@link GValue} objects do not construct bytecode with that object.
+     * Bytecode does not make use of parameterization in that fashion so it there isn't a need to really preserve that
+     * functionality there (doing so would require changes to serializers).
+     */
     public interface Admin<S, E> extends Traversal.Admin<S, E>, GraphTraversal<S, E> {
+
+        /**
+         * Filter the <code>E</code> object given a biased coin toss.
+         *
+         * @param probability the probability that the object will pass through the filter
+         * @return the traversal with an appended {@link CoinStep}.
+         * @see <a href="http://tinkerpop.apache.org/docs/${project.version}/reference/#coin-step" target="_blank">Reference Documentation - Coin Step</a>
+         * @since 3.7.3
+         */
+        public default GraphTraversal<S, E> coin(final GValue<Double> probability) {
+            this.asAdmin().getBytecode().addStep(GraphTraversal.Symbols.coin, probability.get());
+            return this.asAdmin().addStep(new CoinStep<>(this.asAdmin(), probability));
+        }
+
+        /**
+         * Filter the <code>E</code> object given a biased coin toss where the argument can be either a {@link GValue}
+         * object or a double.
+         *
+         * @param probability the probability that the object will pass through and must be a {@link GValue} object or a double.
+         * @return the traversal with an appended {@link CoinStep}.
+         * @see <a href="http://tinkerpop.apache.org/docs/${project.version}/reference/#coin-step" target="_blank">Reference Documentation - Coin Step</a>
+         * @since 3.7.3
+         */
+        public default GraphTraversal<S, E> coin(final Object probability) {
+            if (probability instanceof Number)
+                return this.coin(((Number) probability).doubleValue());
+            else if (probability instanceof GValue && ((GValue) probability).getType() == GType.DOUBLE)
+                return this.coin(probability);
+            else
+                throw new IllegalArgumentException("The probability must be a GValue<Double> or a double");
+        }
 
         @Override
         public default <E2> GraphTraversal.Admin<S, E2> addStep(final Step<?, E2> step) {
